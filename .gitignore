@@ -1,0 +1,10 @@
+
+/target
+
+output.c
+
+output
+output.exe
+
+*.log
+*.tmp
