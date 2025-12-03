@@ -1,3 +1,4 @@
 fn main() -> i32 {
-    return 42;
+    let x: i32 = ow 15;
+    return x;
 }

@@ -17,7 +17,15 @@ pub struct Block {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Return(i32),
+    Let { name: String, ty: Type, value: Expr },
+    Return(Expr),
+}
+
+#[derive(Debug, Clone)]
+pub enum Expr {
+    Integer(i32),
+    Ident(String),
+    Owned(Box<Expr>),
 }
 
 #[derive(Debug, Clone)]

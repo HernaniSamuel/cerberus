@@ -1,18 +1,31 @@
+// Things to be ignored
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 
+// Top-level stuff (first things that you see, level 0 stuff like functions and structs)
 program = { SOI ~ function ~ EOI }
 
 function = { "fn" ~ ident ~ "(" ~ ")" ~ "->" ~ type_name ~ block }
 
-block = { "{" ~ statement* ~ "}" }
-
-statement = { return_stmt }
-
-return_stmt = { "return" ~ integer ~ ";" }
-
 type_name = { "i32" }
 
+block = { "{" ~ statement* ~ "}" }
+
+// Statements
+statement = _{ let_stmt | return_stmt }
+
+let_stmt = { "let" ~ ident ~ ":" ~ type_name ~ "=" ~ expr ~ ";" }
+
+return_stmt = { "return" ~ expr ~ ";" }
+
+// Expressions
+expr = { owned_expr | primary }
+
+owned_expr = { "ow" ~ primary }
+
+primary = _{integer | ident | "(" ~ expr ~ ")" }
+
+// Tokens
 ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 
-integer = @{"-"? ~ ASCII_DIGIT+ }
+integer = @{ "-"? ~ ASCII_DIGIT+}
