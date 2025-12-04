@@ -37,5 +37,9 @@ fn gen_expr(expr: &Expr) -> String {
             // ow will be checked in Tyrant IR in middle-end
             gen_expr(inner)
         }
+        Expr::Moved(inner) => {
+            // mv is also just a cerberus feature, doesnt change nothing in C now...
+            gen_expr(inner)
+        }
     }
 }

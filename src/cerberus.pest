@@ -19,9 +19,11 @@ let_stmt = { "let" ~ ident ~ ":" ~ type_name ~ "=" ~ expr ~ ";" }
 return_stmt = { "return" ~ expr ~ ";" }
 
 // Expressions
-expr = { owned_expr | primary }
+expr = { owned_expr | moved_expr | primary }
 
 owned_expr = { "ow" ~ primary }
+
+moved_expr = { "mv" ~ primary }
 
 primary = _{integer | ident | "(" ~ expr ~ ")" }
 

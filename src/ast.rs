@@ -26,6 +26,7 @@ pub enum Expr {
     Integer(i32),
     Ident(String),
     Owned(Box<Expr>),
+    Moved(Box<Expr>),
 }
 
 #[derive(Debug, Clone)]

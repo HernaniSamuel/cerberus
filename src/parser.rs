@@ -1,14 +1,14 @@
+use crate::ast::*;
 use pest::Parser;
 use pest_derive::Parser;
-use crate::ast::*;
 
 #[derive(Parser)]
 #[grammar = "cerberus.pest"]
 pub struct CerberusParser;
 
 pub fn parse(source: &str) -> Result<Program, String> {
-    let pairs = CerberusParser::parse(Rule::program, source)
-        .map_err(|e| format!("Parser error: {}", e))?;
+    let pairs =
+        CerberusParser::parse(Rule::program, source).map_err(|e| format!("Parser error: {}", e))?;
 
     let program_pair = pairs.into_iter().next().unwrap();
     let function_pair = program_pair.into_inner().next().unwrap();
@@ -72,14 +72,18 @@ fn parse_expr(pair: pest::iterators::Pair<Rule>) -> Result<Expr, String> {
             let primary = pair.into_inner().next().unwrap();
             Ok(Expr::Owned(Box::new(parse_primary(primary)?)))
         }
+        Rule::moved_expr => {
+            let primary = pair.into_inner().next().unwrap();
+            Ok(Expr::Moved(Box::new(parse_primary(primary)?)))
+        }
         Rule::integer => {
-            let n = pair.as_str().parse::<i32>()
+            let n = pair
+                .as_str()
+                .parse::<i32>()
                 .map_err(|e| format!("Invalid integer: {}", e))?;
             Ok(Expr::Integer(n))
         }
-        Rule::ident => {
-            Ok(Expr::Ident(pair.as_str().to_string()))
-        }
+        Rule::ident => Ok(Expr::Ident(pair.as_str().to_string())),
         Rule::expr => {
             // Recursão: expressão dentro de outra (parênteses)
             parse_expr(pair.into_inner().next().unwrap())
@@ -91,13 +95,13 @@ fn parse_expr(pair: pest::iterators::Pair<Rule>) -> Result<Expr, String> {
 fn parse_primary(pair: pest::iterators::Pair<Rule>) -> Result<Expr, String> {
     match pair.as_rule() {
         Rule::integer => {
-            let n = pair.as_str().parse::<i32>()
+            let n = pair
+                .as_str()
+                .parse::<i32>()
                 .map_err(|e| format!("Invalid integer: {}", e))?;
             Ok(Expr::Integer(n))
         }
-        Rule::ident => {
-            Ok(Expr::Ident(pair.as_str().to_string()))
-        }
+        Rule::ident => Ok(Expr::Ident(pair.as_str().to_string())),
         Rule::expr => {
             // Expressão dentro de parênteses
             parse_expr(pair.into_inner().next().unwrap())

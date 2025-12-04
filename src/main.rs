@@ -1,9 +1,9 @@
 mod ast;
-mod parser;
 mod codegen;
+mod parser;
 
-use std::fs;
 use std::env;
+use std::fs;
 use std::process;
 use std::process::Command;
 
@@ -29,7 +29,7 @@ fn main() {
     };
 
     println!("Success reading the file! Content: \n{}", source);
-    
+
     // Parser
     let ast = match parser::parse(&source) {
         Ok(ast) => ast,
@@ -53,7 +53,7 @@ fn main() {
         .args(&["-std=c89", "-o", "output", "output.c"])
         .status()
         .expect("Failed to run gcc, make sure that GCC is installed in your device.");
-    
+
     if status.success() {
         println!("Compiled successfully!");
 
@@ -61,7 +61,7 @@ fn main() {
         let output = Command::new("./output")
             .output()
             .expect("Failed to run binary");
-        
+
         println!("Exit code: {}", output.status.code().unwrap());
     } else {
         eprintln!("Compilation failed!");
