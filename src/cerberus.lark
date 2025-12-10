@@ -9,8 +9,7 @@ start: function+
 // -----------------------
 function: "fn" IDENT "(" ")" "->" type "{" stmt* "}"
 
-type: IDENT          // only simple types for now...
-
+type: IDENT
 
 // -----------------------
 // Statements
@@ -18,13 +17,13 @@ type: IDENT          // only simple types for now...
 stmt: let_stmt
     | return_stmt
     | expr_stmt
-    | ";"            // empty_stmt
+    | ";"
 
 // let a: i32 = ow 10;
-let_stmt: "let" IDENT ":" type "=" ownership expr ";"
+let_stmt: "let" IDENT ":" type "=" owned_expr ";"
 
 // return mv b;
-return_stmt: "return" ownership expr ";"
+return_stmt: "return" owned_expr ";"
 
 // expression used as statement
 expr_stmt: expr ";"
@@ -32,8 +31,11 @@ expr_stmt: expr ";"
 // -----------------------
 // Ownership prefix
 // -----------------------
-// requires all assignments and returns to have ow|mv
-ownership: "ow" | "mv"
+OW: "ow"
+MV: "mv"
+
+owned_expr: OW expr
+          | MV expr
 
 // -----------------------
 // Expressions
@@ -42,7 +44,7 @@ expr: literal
     | IDENT
     | call_expr
 
-call_expr: IDENT "(" ")" // v0.1 only calls without args
+call_expr: IDENT "(" ")"
 
 literal: INT
 
