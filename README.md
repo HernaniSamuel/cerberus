@@ -1,0 +1,2 @@
+Cerberus is a bare-metal programming language that aims to be the optimal point between C and Rust, explicitly incorporating Rust's safety features into a minimalist syntax that generates secure, fast, and portable C. <br>
+This project was initially being developed in Rust, but I ended up migrating to Python for greater flexibility and speed in development. I will switch the compiler to Rust when it's more mature. And futurely, cerberus will be self-hosted.

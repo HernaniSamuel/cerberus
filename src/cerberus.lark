@@ -1,0 +1,58 @@
+// =======================
+// Cerberus Grammar v0.1
+// =======================
+
+start: function+
+
+// -----------------------
+// Functions
+// -----------------------
+function: "fn" IDENT "(" ")" "->" type "{" stmt* "}"
+
+type: IDENT          // only simple types for now...
+
+
+// -----------------------
+// Statements
+// -----------------------
+stmt: let_stmt
+    | return_stmt
+    | expr_stmt
+    | ";"            // empty_stmt
+
+// let a: i32 = ow 10;
+let_stmt: "let" IDENT ":" type "=" ownership expr ";"
+
+// return mv b;
+return_stmt: "return" ownership expr ";"
+
+// expression used as statement
+expr_stmt: expr ";"
+
+// -----------------------
+// Ownership prefix
+// -----------------------
+// requires all assignments and returns to have ow|mv
+ownership: "ow" | "mv"
+
+// -----------------------
+// Expressions
+// -----------------------
+expr: literal
+    | IDENT
+    | call_expr
+
+call_expr: IDENT "(" ")" // v0.1 only calls without args
+
+literal: INT
+
+// -----------------------
+// Tokens
+// -----------------------
+IDENT: /[a-zA-Z_][a-zA-Z0-9_]*/
+INT: /[0-9]+/
+
+%import common.WS_INLINE
+%ignore WS_INLINE
+%import common.NEWLINE
+%ignore NEWLINE
