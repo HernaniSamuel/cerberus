@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from pprint import pprint
+import subprocess
 import sys
 
 from lark import Lark, Tree, UnexpectedToken, UnexpectedCharacters
@@ -46,6 +47,31 @@ def build_parser() -> Lark:
 
     return Lark(grammar, parser="lalr", start="start", debug=False)
 
+
+def compile_c(source: str, output: str) -> None:
+    result = subprocess.run(
+        ["gcc", source, "-o", output],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"GCC failed:\n{result.stderr}"
+        )
+
+
+def run_binary(path: str) -> int:
+    """
+    Runs a compiled binary and returns its exit code.
+    """
+    result = subprocess.run(
+        [str(Path(path))],
+        capture_output=True,
+        text=True,
+    )
+
+    return result.returncode
 
 # ---------------------------------------
 # Pipeline
@@ -98,6 +124,16 @@ def main() -> None:
     # Save output (optional)
     Path("output.c").write_text(c_code, encoding="utf-8")
     print("[Saved output.c]")
+
+    # 7. Compile C → binary
+    print("=== GCC ===")
+    compile_c("output.c", "program.exe")
+    print("[Compiled binary: program.exe]")
+
+    # 8. Run binary
+    print("=== Running ===")
+    exit_code = run_binary("program.exe")
+    print(f"Program exited with code {exit_code}")
 
 
 if __name__ == "__main__":

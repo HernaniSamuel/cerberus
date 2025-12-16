@@ -4,21 +4,12 @@
 int main() {
     int a;
     int b;
-    int d;
-    int c;
 
         {
-        a = 10;
+        a = 12;
+        b = a;
             {
-            b = a;
-                {
-                d = b;
-                /* drop d; (out of scope) */
-            }
-        }
-        c = 11;
-            {
-            return c;
+            return b;
         }
     }
 }
