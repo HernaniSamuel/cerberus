@@ -14,13 +14,35 @@ from fates import (
     IR_Return,
     IRLiteral,
     IRVarRef,
+    IR_Drop,
+    IR_BlockStart,
+    IR_BlockEnd,
 )
 
 
 # ----------------------------------------------------
-# Helpers
+# Indentation Context
 # ----------------------------------------------------
 
+class IndentContext:
+    def __init__(self, initial_level: int = 1):
+        # Level 1 corresponds to the indentation within the body of the C function
+        self.level = initial_level
+        self.size = 4
+
+    def get_indent(self) -> str:
+        return ' ' * (self.level * self.size)
+
+    def push(self) -> None:
+        self.level += 1
+
+    def pop(self) -> None:
+        self.level -= 1
+
+
+# ----------------------------------------------------
+# Instruction lowering
+# ----------------------------------------------------
 def _c_of_operand(op: IRLiteral | IRVarRef) -> str:
     """Converts an IR operand to C code."""
     if isinstance(op, IRLiteral):
@@ -31,29 +53,47 @@ def _c_of_operand(op: IRLiteral | IRVarRef) -> str:
         raise TypeError(f"Unknown operand type in IR: {op!r}")
 
 
-# ----------------------------------------------------
-# Instruction lowering
-# ----------------------------------------------------
+def _lower_instr(instr: IRInstr, ctx: IndentContext) -> str:
+    """
+    Converts a single IR instruction into C code, using the context
+    to handle indentation for blocks.
+    """
 
-def _lower_instr(instr: IRInstr) -> str:
-    """
-    Converts a single IR instruction into C code.
-    The behavior is 1:1, completely faithful to the IR.
-    """
+    # --- Block Control ---
+    if isinstance(instr, IR_BlockStart):
+        # Opens the block at the current indentation level
+        # and increases the level for the block contents
+        out = "{"
+        ctx.push()
+        return out
+
+    if isinstance(instr, IR_BlockEnd):
+        # Decreases the indentation level before closing the block
+        ctx.pop()
+        return "}"
+
+    # --- Body Instructions ---
+    # Adds indentation for all code instructions
+    indent = ctx.get_indent()
 
     if isinstance(instr, IR_OwLiteral):
-        # target = literal;
-        return f"{instr.target} = {instr.value.value};"
+        return f"{indent}{instr.target} = {instr.value.value};"
 
     if isinstance(instr, IR_MvVar):
-        # target = source; // When we move in IR, we move in C as well
-        return f"{instr.target} = {instr.source};"
+        return f"{indent}{instr.target} = {instr.source};"
 
     if isinstance(instr, IR_Assign):
-        return f"{instr.target} = {_c_of_operand(instr.operand)};"
+        return f"{indent}{instr.target} = {_c_of_operand(instr.operand)};"
 
     if isinstance(instr, IR_Return):
-        return f"return {_c_of_operand(instr.operand)};"
+        # Return statements should not be indented differently even if they
+        # are the last instruction at the lowest level (function level 1);
+        # the indentation logic already handles this correctly.
+        return f"{indent}return {_c_of_operand(instr.operand)};"
+
+    if isinstance(instr, IR_Drop):
+        # Translates drop into a comment
+        return f"{indent}/* drop {instr.target}; (out of scope) */"
 
     raise TypeError(f"Unknown instruction type: {instr!r}")
 
@@ -63,37 +103,39 @@ def _lower_instr(instr: IRInstr) -> str:
 # ----------------------------------------------------
 
 def _lower_function(fn: IRFunction) -> str:
-    """
-    Generates C for a function.
-    The function is mapped directly to:
-
-        int fn_name() {
-            int a;
-            int b;
-            ...
-            <instrs...>
-        }
-
-    The data types are maintained but kept simple: everything becomes 'int' for now,
-    since Fates still only represents i32.
-    """
-
-    # Header
     out: List[str] = []
     out.append(f"int {fn.name}() {{")
 
-    # Declaration of local variables
+    # Local variable declarations (all hoisted outside of C block scopes)
     for local in fn.locals:
         out.append(f"    int {local};")
 
-    # Body of the function
+    out.append("")
+
+    # Function body with indentation context.
+    # Initial indentation level is 1 (the '    ' right after 'int fn() {')
+    ctx = IndentContext(initial_level=1)
+
     for instr in fn.instrs:
-        c_line = _lower_instr(instr)
-        out.append(f"    {c_line}")
+        c_line = _lower_instr(instr, ctx)
+
+        # Closing '}' and opening '{' blocks are handled
+        # with correct indentation inside _lower_instr.
+
+        # Only instructions that are not block open/close
+        # need the initial indentation here.
+        # Otherwise, IR_BlockEnd will generate '    }'
+        # and IR_BlockStart will generate '{' without leading spaces.
+
+        if isinstance(instr, (IR_BlockStart, IR_BlockEnd)):
+            # For braces, the instruction itself returns the final indentation.
+            out.append(ctx.get_indent() + c_line)
+        else:
+            # For other instructions, _lower_instr already applied indentation.
+            out.append(c_line)
 
     out.append("}")
     return "\n".join(out)
-
 
 # ----------------------------------------------------
 # Program lowering

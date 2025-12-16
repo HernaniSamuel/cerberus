@@ -4,7 +4,21 @@
 int main() {
     int a;
     int b;
-    a = 10;
-    b = a;
-    return b;
+    int d;
+    int c;
+
+        {
+        a = 10;
+            {
+            b = a;
+                {
+                d = b;
+                /* drop d; (out of scope) */
+            }
+        }
+        c = 11;
+            {
+            return c;
+        }
+    }
 }

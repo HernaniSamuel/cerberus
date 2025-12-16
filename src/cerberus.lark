@@ -7,7 +7,7 @@ start: function+
 // -----------------------
 // Functions
 // -----------------------
-function: "fn" IDENT "(" ")" "->" type "{" stmt* "}"
+function: "fn" IDENT "(" ")" "->" type block_stmt
 
 type: IDENT
 
@@ -17,6 +17,7 @@ type: IDENT
 stmt: let_stmt
     | return_stmt
     | expr_stmt
+    | block_stmt
     | ";"
 
 // let a: i32 = ow 10;
@@ -27,6 +28,10 @@ return_stmt: "return" owned_expr ";"
 
 // expression used as statement
 expr_stmt: expr ";"
+
+// block statement
+block_stmt: "{" stmt* "}"
+
 
 // -----------------------
 // Ownership prefix

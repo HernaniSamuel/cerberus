@@ -17,6 +17,7 @@ from ast_cerberus import (
     MvExpr,
     Expr,
     Stmt,
+    BlockStmt,
 )
 
 
@@ -126,29 +127,41 @@ class CST2AST(Transformer):
         # expr_stmt: expr ";"
         return children[0]
 
+    def block_stmt(self, children: List[Any]) -> BlockStmt:
+        stmts: List[Stmt] = []
+
+        for c in children:
+            if not isinstance(c, Stmt):
+                raise TypeError(f"Expected Stmt in block, got {type(c).__name__}")
+            stmts.append(c)
+
+        return BlockStmt(stmts)
+
     # ---------------------------------------------------------
     # Function
     # ---------------------------------------------------------
     def function(self, children: List[Any]) -> Function:
         """
-        function: "fn" IDENT "(" ")" "->" type "{" stmt* "}"
-
         children:
-        0 → IDENT (string) — name
-        1 → TypeNode — return type
-        2... → Stmt — body
+        0 → IDENT (string)
+        1 → TypeNode
+        2 → BlockStmt
         """
         name: str = children[0]
         return_type: TypeNode = children[1]
-        stmts: List[Any] = children[2:]
+        body: BlockStmt = children[2]
 
-        body: List[Stmt] = []
-        for s in stmts:
-            if not isinstance(s, Stmt):
-                raise TypeError(f"Expected Stmt in function body, got {type(s).__name__}")
-            body.append(s)
+        if not isinstance(body, BlockStmt):
+            raise TypeError(
+                f"Expected BlockStmt as function body, got {type(body).__name__}"
+            )
 
-        return Function(name=name, params=[], return_type=return_type, body=body)
+        return Function(
+            name=name,
+            params=[],
+            return_type=return_type,
+            body=body,
+        )
 
     # ---------------------------------------------------------
     # Root Program

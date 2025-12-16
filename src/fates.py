@@ -16,6 +16,7 @@ from ast_cerberus import (
     TypeNode,
     Expr as ASTExpr,
     Stmt as ASTStmt,
+    BlockStmt
 )
 
 
@@ -99,6 +100,19 @@ class IR_Assign(IRInstr):
 class IR_Return(IRInstr):
     operand: IROperand
 
+# Instruction to clean up a variable (drop/invalidate)
+@dataclass
+class IR_Drop(IRInstr):
+    target: str # name of variable to be dropped
+
+@dataclass
+class IR_BlockStart(IRInstr):
+    pass
+
+@dataclass
+class IR_BlockEnd(IRInstr):
+    pass
+
 
 # -------------------------
 # Utilities / pretty print
@@ -121,6 +135,12 @@ def ir_pretty(instrs: Iterable[IRInstr]) -> str:
                 out.append(f"return {i.operand.value};")
             else:
                 out.append(f"return {i.operand.name};")
+        elif isinstance(i, IR_Drop):
+            out.append(f"drop {i.target}")
+        elif isinstance(i, IR_BlockStart):
+            out.append("{")
+        elif isinstance(i, IR_BlockEnd):
+            out.append("}")
         else:
             out.append(f"<unknown instr {i}>")
     return "\n".join(out)
@@ -196,100 +216,181 @@ def lower_program(ast_prog: Program) -> IRProgram:
 
 
 def lower_function(func: ASTFunction) -> IRFunction:
-    # collect locals as names (we don't need types separately here, but keep them in a map)
+    #1. Local variable metadata (flat list of all variables in the function)
     locals_list: List[str] = []
     local_types: Dict[str, str] = {}
 
-    instrs: List[IRInstr] = []
+    #2. Scope Stack: Each element is a set of declared variable names.
+    # WITHIN that specific scope (BlockStmt).
+    scope_stack: List[set[str]] = []
 
-    # helper to register a local if needed
+    instrs: List[IRInstr] = []
+    return_type_name = func.return_type.name
+
+    # The function body (func.body) is the highest-level BlockStmt.
+    # The lowering of the block will handle the scope and the drops.
+    _lower_stmt(
+        func.body, instrs, local_types, locals_list, func.name, scope_stack, return_type_name
+    )
+
+    # Sanity check: The stack should be empty after processing the main body.
+    if scope_stack:
+        raise Exception("Internal Lowering Error: Scope stack not empty after function body lowering.")
+
+    # 3. Build IRFunction
+    return IRFunction(name=func.name, return_type=return_type_name, locals=locals_list, instrs=instrs)
+
+
+def _lower_block_content(
+        block: BlockStmt,
+        instrs: List[IRInstr],
+        local_types: Dict[str, str],
+        locals_list: List[str],
+        context: str,
+        scope_stack: List[set[str]],
+        return_type_name: str,
+) -> None:
+    """Processes the contents of a BlockStmt. Must be called for the function body and internal blocks."""
+
+    # 1. SCOPE INPUT: Stacks a new set for the variables declared in this block
+    current_block_locals: set[str] = set()
+    scope_stack.append(current_block_locals)
+
+    # 2. Recursive lowering of internal statements
+    for inner_stmt in block.stmts:
+        _lower_stmt(
+            inner_stmt, instrs, local_types, locals_list, context, scope_stack, return_type_name
+        )
+
+    # 3. SCOPE OUTPUT: Inserts IR_Drop for each variable declared in the block
+    for var_name in current_block_locals:
+        instrs.append(IR_Drop(var_name))
+
+    # 4. Unstack the scope
+    scope_stack.pop()
+
+def _lower_stmt(
+        stmt: ASTStmt,
+        instrs: List[IRInstr],
+        local_types: Dict[str, str],
+        locals_list: List[str],
+        context: str,
+        scope_stack: List[set[str]],
+        return_type_name: str,
+) -> None:
+    """A recursive helper function for lowering a statement, managing its scope."""
+
     def register_local(name: str, typ: TypeNode) -> None:
+        """Helper to register the location in IRFunction and in the current scope."""
         if name not in local_types:
             local_types[name] = typ.name
             locals_list.append(name)
 
-    # Lower AST statements one-by-one
-    for stmt in func.body:
-        if isinstance(stmt, LetStmt):
-            # let NAME: TYPE = owned_expr
-            name = stmt.name
-            typ = stmt.type_.name
-            register_local(name, stmt.type_)
-            value = stmt.value
+        # Adds the variable to the CURRENT scope so that it is "dropped" in the output
+        if scope_stack:
+            scope_stack[-1].add(name)
 
-            # SEMANTIC VALIDATION HERE!
-            if isinstance(value, OwExpr):
-                # RULE: ow only with literals
-                validate_ow_expr(value.expr, f"let {name}")
+    if isinstance(stmt, LetStmt):
+        # let NAME: TYPE = owned_expr
+        name = stmt.name
+        typ = stmt.type_.name
 
-                inner = value.expr
-                if isinstance(inner, LiteralExpr):
-                    lit = IRLiteral(inner.value, typ)
-                    instrs.append(IR_OwLiteral(target=name, value=lit))
-                else:
-                    # Should never reach here due to validation
-                    raise SemanticError(f"Internal error: OwExpr with {type(inner).__name__}")
+        # 1. Register the variable in the scope and in the list of locations.
+        register_local(name, stmt.type_)
+        value = stmt.value
 
-            elif isinstance(value, MvExpr):
-                # RULE: mv only with variables
-                validate_mv_expr(value.expr, f"let {name}")
-
-                inner = value.expr
-                if isinstance(inner, VarExpr):
-                    instrs.append(IR_MvVar(target=name, source=inner.name, typ=typ))
-                else:
-                    # Should never reach here due to validation
-                    raise SemanticError(f"Internal error: MvExpr with {type(inner).__name__}")
-
+        # SEMANTIC VALIDATION & IR GENERATION (LET)
+        if isinstance(value, OwExpr):
+            validate_ow_expr(value.expr, f"let {name}")
+            inner = value.expr
+            if isinstance(inner, LiteralExpr):
+                lit = IRLiteral(inner.value, typ)
+                instrs.append(IR_OwLiteral(target=name, value=lit))
             else:
-                # RULE: let REQUIRES ow or mv
-                raise SemanticError(
-                    f" SEMANTIC ERROR in 'let {name}':\n"
-                    f" You must use 'ow' or 'mv'!\n"
-                    f" \n"
-                    f" Examples:\n"
-                    f" let x: i32 = ow 10; // for literals\n"
-                    f" let y: i32 = mv x; // for variables"
-                )
+                raise SemanticError(f"Internal error: OwExpr with {type(inner).__name__}")
 
-        elif isinstance(stmt, ReturnStmt):
-            v = stmt.value
+        elif isinstance(value, MvExpr):
+            validate_mv_expr(value.expr, f"let {name}")
+            inner = value.expr
+            if isinstance(inner, VarExpr):
+                # IR instruction generation
+                instrs.append(IR_MvVar(target=name, source=inner.name, typ=typ))
 
-            # SEMANTIC VALIDATION HERE!
-            if isinstance(v, MvExpr):
-                # RULE: mv only with variables
-                validate_mv_expr(v.expr, "return")
+                # CRITICAL FIX: Source variable has been moved/consumed.
+                # It must be removed from the drop list of its original scope.
+                source_var_name = inner.name
 
-                inner = v.expr
-                if isinstance(inner, VarExpr):
-                    instrs.append(IR_Return(IRVarRef(inner.name, func.return_type.name)))
-                else:
-                    raise SemanticError(f"Internal error: MvExpr with {type(inner).__name__}")
-
-            elif isinstance(v, OwExpr):
-                # RULE: ow only with literals
-                validate_ow_expr(v.expr, "return")
-
-                inner = v.expr
-                if isinstance(inner, LiteralExpr):
-                    instrs.append(IR_Return(IRLiteral(inner.value, typ=func.return_type.name)))
-                else:
-                    raise SemanticError(f"Internal error: OwExpr with {type(inner).__name__}")
-
+                # Traverse the scope stack to find where 'a' was registered
+                for scope_set in scope_stack:
+                    if source_var_name in scope_set:
+                        scope_set.remove(source_var_name)
+                        break
             else:
-                # RULE: return REQUIRES ow or mv
-                raise SemanticError(
-                    f" SEMANTIC ERROR in 'return':\n"
-                    f" You must use 'ow' or 'mv'!\n"
-                    f" \n"
-                    f" Examples:\n"
-                    f" return ow 42; // for literals\n"
-                    f" return mv x; // for variables"
-                )
+                raise SemanticError(f"Internal error: MvExpr with {type(inner).__name__}")
 
         else:
-            raise NotImplementedError(f"Statement lowering not implemented: {type(stmt)}")
+            raise SemanticError(
+                f" SEMANTIC ERROR in 'let {name}':\n"
+                f" You must use 'ow' or 'mv'!\n"
+                f" \n"
+                f" Examples:\n"
+                f" let x: i32 = ow 10; // for literals\n"
+                f" let y: i32 = mv x; // for variables"
+            )
 
-    # Build IRFunction
-    return_type = func.return_type.name
-    return IRFunction(name=func.name, return_type=return_type, locals=locals_list, instrs=instrs)
+    elif isinstance(stmt, ReturnStmt):
+        # SEMANTIC VALIDATION & IR GENERATION (RETURN)
+        v = stmt.value
+
+        if isinstance(v, MvExpr):
+            validate_mv_expr(v.expr, "return")
+            inner = v.expr
+            if isinstance(inner, VarExpr):
+                # 1. IR instruction generation
+                instrs.append(IR_Return(IRVarRef(inner.name, return_type_name)))
+
+                # 2. CRITICAL CORRECTION: Variable consumed by a return.
+                # The value is being moved OUTSIDE the function.
+                # Therefore, it should NOT be dropped at the end of the function's scope.
+                var_name = inner.name
+
+                # Finds the variable in any active scope (set) and removes it.
+                for scope_set in scope_stack:
+                    if var_name in scope_set:
+                        scope_set.remove(var_name)
+                        break
+            else:
+                raise SemanticError(f"Internal error: MvExpr with {type(inner).__name__}")
+
+        elif isinstance(v, OwExpr):
+            validate_ow_expr(v.expr, "return")
+            inner = v.expr
+            if isinstance(inner, LiteralExpr):
+                instrs.append(IR_Return(IRLiteral(inner.value, typ=return_type_name)))
+            else:
+                raise SemanticError(f"Internal error: OwExpr with {type(inner).__name__}")
+
+        else:
+            raise SemanticError(
+                f" SEMANTIC ERROR in 'return':\n"
+                f" You must use 'ow' or 'mv'!\n"
+                f" \n"
+                f" Examples:\n"
+                f" return ow 42; // for literals\n"
+                f" return mv x; // for variables"
+            )
+
+    elif isinstance(stmt, BlockStmt):
+        # 1. Explicit start block for C
+        instrs.append(IR_BlockStart())
+
+        # 2. Process internal content (recursive)
+        _lower_block_content(
+            stmt, instrs, local_types, locals_list, context, scope_stack, return_type_name
+        )
+
+        # 3. Explicit end block for C
+        instrs.append(IR_BlockEnd())
+    else:
+        # Other statement types not yet implemented
+        raise NotImplementedError(f"Statement lowering not implemented: {type(stmt)}")

@@ -15,8 +15,10 @@ from fates import (
     IR_Return,
     IRLiteral,
     IRVarRef,
+    IR_Drop,
+    IR_BlockStart,
+    IR_BlockEnd,
 )
-
 
 # -------------------------
 # Nemesis Errors
@@ -135,13 +137,22 @@ def check_function(fn: IRFunction) -> None:
         elif isinstance(instr, IR_Return):
             check_return(ctx, instr)
 
+        # 2. NEW: IR_Drop Handling
+        elif isinstance(instr, IR_Drop):
+            check_drop(ctx, instr)
+
+        # 3. NEW: Ignore Block IR
+        elif isinstance(instr, (IR_BlockStart, IR_BlockEnd)):
+            # These instructions are for Typewriter (C generation) only
+            # and do not change the ownership status.
+            pass
+
         else:
             raise NemesisError(
                 f"Unknown instruction type: {type(instr).__name__}",
                 ctx.function_name,
                 instr
             )
-
 
 # -------------------------
 # RULE 1: ow only works with literals
@@ -299,3 +310,38 @@ def check_return(ctx: CheckContext, instr: IR_Return) -> None:
             ctx.function_name,
             instr
         )
+
+
+# -------------------------
+# RULE 5: Drop instruction
+# -------------------------
+
+def check_drop(ctx: CheckContext, instr: IR_Drop) -> None:
+    """
+    Checks: drop x;
+
+    RULES:
+    - Drop should only be generated for ALIVE variables (Internal Compiler Check).
+    - Drop consumes the variable, setting its state to MOVED.
+    """
+    target = instr.target
+
+    # It is good practice to check if Fates is generating correct IR.
+    # A MOVED or UNINIT variable should not be Dropped.
+    if ctx.is_moved(target):
+        raise NemesisError(
+            f"Internal Compiler Error: Variable '{target}' was already MOVED and should not be dropped again.",
+            ctx.function_name,
+            instr
+        )
+
+    if ctx.is_uninit(target):
+        raise NemesisError(
+            f"Internal Compiler Error: Variable '{target}' is UNINITIALIZED and should not be dropped.",
+            ctx.function_name,
+            instr
+        )
+
+    # The drop is the end of the life cycle: the value is consumed.
+    ctx.mark_moved(target)
+    # We do not count the user's 'move', only consumption/cleaning.

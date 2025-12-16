@@ -64,6 +64,10 @@ class LetStmt(Stmt):
 class ReturnStmt(Stmt):
     value: Expr
 
+@dataclass
+class BlockStmt(Stmt):
+    stmts: List[Stmt]
+
 
 # -----------------------------------------------
 # Function definitions
@@ -79,7 +83,7 @@ class Function(ASTNode):
     name: str
     params: List[FunctionParam]
     return_type: TypeNode
-    body: List[Stmt]
+    body: BlockStmt
 
 
 # -----------------------------------------------
